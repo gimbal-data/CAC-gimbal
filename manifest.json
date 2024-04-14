@@ -37,6 +37,13 @@
       },
       "description": "Start Capture"
     },
+    "save": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Alt+Shift+D"
+      },
+      "description": "Start Capture"
+    },
     "stop": {
       "suggested_key": {
         "default": "Ctrl+Shift+X",
