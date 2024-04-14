@@ -1,6 +1,6 @@
-const extend = function() { //helper function to merge objects
+const extend = function () { //helper function to merge objects
   let target = arguments[0],
-      sources = [].slice.call(arguments, 1);
+    sources = [].slice.call(arguments, 1);
   for (let i = 0; i < sources.length; ++i) {
     let src = sources[i];
     for (key in src) {
@@ -60,21 +60,21 @@ class Recorder {
   }
 
   setEncoding(encoding) {
-    if(!this.isRecording() && this.encoding !== encoding) {
-        this.encoding = encoding;
-        this.initWorker();
+    if (!this.isRecording() && this.encoding !== encoding) {
+      this.encoding = encoding;
+      this.initWorker();
     }
   }
 
   setOptions(options) {
     if (!this.isRecording()) {
       extend(this.options, options);
-      this.worker.postMessage({ command: "options", options: this.options});
+      this.worker.postMessage({ command: "options", options: this.options });
     }
   }
 
   startRecording() {
-    if(!this.isRecording()) {
+    if (!this.isRecording()) {
       let numChannels = this.numChannels;
       let buffer = this.buffer;
       let worker = this.worker;
@@ -83,7 +83,7 @@ class Recorder {
         this.numChannels, this.numChannels);
       this.input.connect(this.processor);
       this.processor.connect(this.context.destination);
-      this.processor.onaudioprocess = function(event) {
+      this.processor.onaudioprocess = function (event) {
         for (var ch = 0; ch < numChannels; ++ch)
           buffer[ch] = event.inputBuffer.getChannelData(ch);
         worker.postMessage({ command: "record", buffer: buffer });
@@ -97,7 +97,7 @@ class Recorder {
   }
 
   cancelRecording() {
-    if(this.isRecording()) {
+    if (this.isRecording()) {
       this.input.disconnect();
       this.processor.disconnect();
       delete this.processor;
@@ -128,7 +128,7 @@ class Recorder {
     this.onEncoderLoading(this, this.encoding);
     this.worker = new Worker(this.workerDir + WORKER_FILE[this.encoding]);
     let _this = this;
-    this.worker.onmessage = function(event) {
+    this.worker.onmessage = function (event) {
       let data = event.data;
       switch (data.command) {
         case "loaded":
@@ -154,115 +154,146 @@ class Recorder {
     });
   }
 
-  onEncoderLoading(recorder, encoding) {}
-  onEncoderLoaded(recorder, encoding) {}
-  onTimeout(recorder) {}
-  onEncodingProgress(recorder, progress) {}
-  onEncodingCanceled(recorder) {}
-  onComplete(recorder, blob) {}
+  onEncoderLoading(recorder, encoding) { }
+  onEncoderLoaded(recorder, encoding) { }
+  onTimeout(recorder) { }
+  onEncodingProgress(recorder, progress) { }
+  onEncodingCanceled(recorder) { }
+  onComplete(recorder, blob) { }
 
 }
 
-const audioCapture = (timeLimit, muteTab, format, quality, limitRemoved) => {
-  chrome.tabCapture.capture({audio: true}, (stream) => { // sets up stream for capture
-    let startTabId; //tab when the capture is started
-    let timeout;
-    let completeTabID; //tab when the capture is stopped
-    let audioURL = null; //resulting object when encoding is completed
-    chrome.tabs.query({active:true, currentWindow: true}, (tabs) => startTabId = tabs[0].id) //saves start tab
-    const liveStream = stream;
-    const audioCtx = new AudioContext();
-    const source = audioCtx.createMediaStreamSource(stream);
-    let mediaRecorder = new Recorder(source); //initiates the recorder based on the current stream
-    mediaRecorder.setEncoding(format); //sets encoding based on options
-    if(limitRemoved) { //removes time limit
-      mediaRecorder.setOptions({timeLimit: 10800});
+const audioCapture =  (timeLimit, muteTab, format, quality, limitRemoved) => {
+  chrome.tabCapture.capture({ audio: true }, (stream) => { // sets up stream for capture
+    if (!stream) {
+      // Do nothing
+      console.log("No Stream! Trying again in 5 seconds...");
+      chrome.tabs.query({}, (tabs) => {
+        var tab = tabs[0];
+        console,log("sending no stream message to tab", tab);
+        const response = chrome.tabs.sendMessage(tab.id, "stream_missing");
+        // do something with response here, not outside the function
+        console.log(response);
+        return true
+      });
+      audioCapture(timeLimit, muteTab, format, quality, limitRemoved)
     } else {
-      mediaRecorder.setOptions({timeLimit: timeLimit/1000});
-    }
-    if(format === "mp3") {
-      mediaRecorder.setOptions({mp3: {bitRate: quality}});
-    }
-    mediaRecorder.startRecording();
+      chrome.tabs.query({}, (tabs) => {
+        var tab = tabs[0];
+        console,log("sending stream acquired message to tab", tab);
+        const response = chrome.tabs.sendMessage(tab.id, "stream_acquired");
+        // do something with response here, not outside the function
+        console.log(response);
+        return true
+      });
+      console.log("STREAM: ", stream);
+      let startTabId; //tab when the capture is started
+      let timeout;
+      let completeTabID; //tab when the capture is stopped
+      let audioURL = null; //resulting object when encoding is completed
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => startTabId = tabs[0].id) //saves start tab
+      const liveStream = stream;
+      const audioCtx = new AudioContext();
 
-    function onStopCommand(command) { //keypress
-      if (command === "stop") {
-        stopCapture();
+      console.log("CREATING SOURCE")
+      const source = audioCtx.createMediaStreamSource(stream);
+      console.log("SOURCE", source)
+      let mediaRecorder = new Recorder(source); //initiates the recorder based on the current stream
+      mediaRecorder.setEncoding(format); //sets encoding based on options
+      if (limitRemoved) { //removes time limit
+        mediaRecorder.setOptions({ timeLimit: 10800 });
+      } else {
+        mediaRecorder.setOptions({ timeLimit: timeLimit / 1000 });
       }
-    }
-    function onStopClick(request) { //click on popup
-      if(request === "stopCapture") {
-        stopCapture();
-      } else if (request === "cancelCapture") {
-        cancelCapture();
-      } else if (request.cancelEncodeID) {
-        if(request.cancelEncodeID === startTabId && mediaRecorder) {
-          mediaRecorder.cancelEncoding();
+      if (format === "mp3") {
+        mediaRecorder.setOptions({ mp3: { bitRate: quality } });
+      }
+      mediaRecorder.startRecording();
+
+      function onStopCommand(command) { //keypress
+        if (command === "stop") {
+          stopCapture();
         }
       }
-    }
-    chrome.commands.onCommand.addListener(onStopCommand);
-    chrome.runtime.onMessage.addListener(onStopClick);
-    mediaRecorder.onComplete = (recorder, blob) => {
-      audioURL = window.URL.createObjectURL(blob);
-      if(completeTabID) {
-        chrome.tabs.sendMessage(completeTabID, {type: "encodingComplete", audioURL});
-      }
-      mediaRecorder = null;
-    }
-    mediaRecorder.onEncodingProgress = (recorder, progress) => {
-      if(completeTabID) {
-        chrome.tabs.sendMessage(completeTabID, {type: "encodingProgress", progress: progress});
-      }
-    }
-
-    const stopCapture = function() {
-      let endTabId;
-      //check to make sure the current tab is the tab being captured
-      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        endTabId = tabs[0].id;
-        if(mediaRecorder && startTabId === endTabId){
-          mediaRecorder.finishRecording();
-          chrome.tabs.create({url: "complete.html"}, (tab) => {
-            completeTabID = tab.id;
-            let completeCallback = () => {
-              chrome.tabs.sendMessage(tab.id, {type: "createTab", format: format, audioURL, startID: startTabId});
-            }
-            setTimeout(completeCallback, 500);
-          });
-          closeStream(endTabId);
+      function onStopClick(request) { //click on popup
+        if (request === "stopCapture") {
+          stopCapture();
+        } else if (request === "cancelCapture") {
+          cancelCapture();
+        } else if (request.cancelEncodeID) {
+          if (request.cancelEncodeID === startTabId && mediaRecorder) {
+            mediaRecorder.cancelEncoding();
+          }
         }
-      })
-    }
-
-    const cancelCapture = function() {
-      let endTabId;
-      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        endTabId = tabs[0].id;
-        if(mediaRecorder && startTabId === endTabId){
-          mediaRecorder.cancelRecording();
-          closeStream(endTabId);
+      }
+      chrome.commands.onCommand.addListener(onStopCommand);
+      chrome.runtime.onMessage.addListener(onStopClick);
+      mediaRecorder.onComplete = (recorder, blob) => {
+        audioURL = window.URL.createObjectURL(blob);
+        console.log("TRYING TO DOWNLOAD!")
+        const currentTs = +new Date() + "";
+        // const currentPage = window.URL.toString.replace(/http\:\/\//, "");
+        const filename = `${currentTs}.${format}`
+        chrome.downloads.download({ url: audioURL, filename, saveAs: false });
+        // if(completeTabID) {
+        //   chrome.tabs.sendMessage(completeTabID, {type: "encodingComplete", audioURL});
+        // }
+        mediaRecorder = null;
+      }
+      mediaRecorder.onEncodingProgress = (recorder, progress) => {
+        if (completeTabID) {
+          chrome.tabs.sendMessage(completeTabID, { type: "encodingProgress", progress: progress });
         }
-      })
-    }
+      }
 
-//removes the audio context and closes recorder to save memory
-    const closeStream = function(endTabId) {
-      chrome.commands.onCommand.removeListener(onStopCommand);
-      chrome.runtime.onMessage.removeListener(onStopClick);
-      mediaRecorder.onTimeout = () => {};
-      audioCtx.close();
-      liveStream.getAudioTracks()[0].stop();
-      sessionStorage.removeItem(endTabId);
-      chrome.runtime.sendMessage({captureStopped: endTabId});
-    }
+      const stopCapture = function () {
+        let endTabId;
+        //check to make sure the current tab is the tab being captured
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          endTabId = tabs[0].id;
+          if (mediaRecorder && startTabId === endTabId) {
+            mediaRecorder.finishRecording();
+            chrome.tabs.create({ url: "complete.html" }, (tab) => {
+              completeTabID = tab.id;
+              let completeCallback = () => {
+                chrome.tabs.sendMessage(tab.id, { type: "createTab", format: format, audioURL, startID: startTabId });
+              }
+              setTimeout(completeCallback, 500);
+            });
+            closeStream(endTabId);
+          }
+        })
+      }
 
-    mediaRecorder.onTimeout = stopCapture;
+      const cancelCapture = function () {
+        let endTabId;
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          endTabId = tabs[0].id;
+          if (mediaRecorder && startTabId === endTabId) {
+            mediaRecorder.cancelRecording();
+            closeStream(endTabId);
+          }
+        })
+      }
 
-    if(!muteTab) {
-      let audio = new Audio();
-      audio.srcObject = liveStream;
-      audio.play();
+      //removes the audio context and closes recorder to save memory
+      const closeStream = function (endTabId) {
+        chrome.commands.onCommand.removeListener(onStopCommand);
+        chrome.runtime.onMessage.removeListener(onStopClick);
+        mediaRecorder.onTimeout = () => { };
+        audioCtx.close();
+        liveStream.getAudioTracks()[0].stop();
+        sessionStorage.removeItem(endTabId);
+        chrome.runtime.sendMessage({ captureStopped: endTabId });
+      }
+
+      mediaRecorder.onTimeout = stopCapture;
+
+      if (!muteTab) {
+        let audio = new Audio();
+        audio.srcObject = liveStream;
+        audio.play();
+      }
     }
   });
 }
@@ -273,36 +304,40 @@ const audioCapture = (timeLimit, muteTab, format, quality, limitRemoved) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.currentTab && sessionStorage.getItem(request.currentTab)) {
     sendResponse(sessionStorage.getItem(request.currentTab));
-  } else if (request.currentTab){
+  } else if (request.currentTab) {
     sendResponse(false);
   } else if (request === "startCapture") {
     startCapture();
   }
 });
 
-const startCapture = function() {
-  chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+const startCapture = function () {
+  console.log("IN THE START CAPTURE FUNCTION")
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     // CODE TO BLOCK CAPTURE ON YOUTUBE, DO NOT REMOVE
     // if(tabs[0].url.toLowerCase().includes("youtube")) {
     //   chrome.tabs.create({url: "error.html"});
     // } else {
-      if(!sessionStorage.getItem(tabs[0].id)) {
-        sessionStorage.setItem(tabs[0].id, Date.now());
-        chrome.storage.sync.get({
-          maxTime: 1200000,
-          muteTab: false,
-          format: "mp3",
-          quality: 192,
-          limitRemoved: false
-        }, (options) => {
-          let time = options.maxTime;
-          if(time > 1200000) {
-            time = 1200000
-          }
-          audioCapture(time, options.muteTab, options.format, options.quality, options.limitRemoved);
-        });
-        chrome.runtime.sendMessage({captureStarted: tabs[0].id, startTime: Date.now()});
-      }
+    if (!sessionStorage.getItem(tabs[0].id)) {
+      console.log("Starting session!")
+      sessionStorage.setItem(tabs[0].id, Date.now());
+      chrome.storage.sync.get({
+        maxTime: 1200000,
+        muteTab: false,
+        format: "mp3",
+        quality: 192,
+        limitRemoved: false
+      },  (options) => {
+        let time = options.maxTime;
+        if (time > 1200000) {
+          time = 1200000
+        }
+       audioCapture(time, options.muteTab, options.format, options.quality, options.limitRemoved);
+      });
+      chrome.runtime.sendMessage({ captureStarted: tabs[0].id, startTime: Date.now() });
+    } else {
+      console.log("SESSION ALREADY STARTED!")
+    }
     // }
   });
 };
@@ -310,6 +345,7 @@ const startCapture = function() {
 
 chrome.commands.onCommand.addListener((command) => {
   if (command === "start") {
+    console.log("EXECUTED HOTKEY START WHAT!!!")
     startCapture();
   }
 });
